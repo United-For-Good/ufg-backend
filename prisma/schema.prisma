@@ -74,22 +74,23 @@ model Cause {
   shortDescription      String?
   description           String?
   goal                  Float
-  raised                Float     @default(0)
+  raised                Float     @default(0)  // Can keep as is, but compute dynamically in API
   color                 String?
+  fundUsage             String?   // New: e.g., "Direct support: 60%, Supplies: 40%" or JSON
 
   peopleHelped          Int       @default(0)
   projectsCompleted     Int       @default(0)
   communitiesImpacted   Int       @default(0)
 
-  // New fields for CRUD in OMS
-  status                CauseStatus @default(OPEN) // OPEN or CLOSED
-  showOnWebsite         Boolean   @default(true) // Whether to display on public site
+  status                CauseStatus @default(OPEN)
+  showOnWebsite         Boolean   @default(true)
 
   donations             Donation[]
   images                CauseImage[]
 
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
+  deletedAt             DateTime? 
 
   @@index([name])
 }
@@ -111,6 +112,7 @@ model CauseImage {
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // Added for soft deletes
 
   @@index([causeId])
 }
@@ -134,6 +136,7 @@ model Donation {
   paymentStatus    PaymentStatus?
   paymentMethod    String?
   paymentCapturedAt DateTime?
+  receiptUrl    String?   
 
   date             DateTime  @default(now())
 
