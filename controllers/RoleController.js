@@ -44,7 +44,7 @@ const createRole = async (req, res) => {
         permissionAssignments: {
           create: permissionChecks.map((permission) => ({
             permission: {
-              connect: { id: permission.id },
+              connect: { id: parseInt(permission.id) },
             },
           })),
         },
@@ -72,7 +72,7 @@ const createRole = async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Error creating role" });
+    res.status(500).json({ message: "Error creating role", error: error.message });
   }
 };
 
@@ -104,17 +104,21 @@ const getAllRoles = async (req, res) => {
     res.json(formattedRoles);
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Error fetching roles" });
+    res.status(500).json({ message: "Error fetching roles", error: error.message });
   }
 };
 
 const getRole = async (req, res) => {
   try {
     const { id } = req.params;
+    const roleId = parseInt(id);
+    if (isNaN(roleId)) {
+      return res.status(400).json({ message: "Invalid role ID" });
+    }
 
     const role = await prisma.role.findUnique({
       where: {
-        id: id,
+        id: roleId,
         deletedAt: null,
       },
       include: {
@@ -141,18 +145,23 @@ const getRole = async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Error fetching role" });
+    res.status(500).json({ message: "Error fetching role", error: error.message });
   }
 };
 
 const updateRole = async (req, res) => {
   try {
     const { id } = req.params;
+    const roleId = parseInt(id);
+    if (isNaN(roleId)) {
+      return res.status(400).json({ message: "Invalid role ID" });
+    }
+
     const { name, description, permissions } = req.body;
 
     const roleExists = await prisma.role.findUnique({
       where: {
-        id,
+        id: roleId,
         deletedAt: null,
       },
     });
@@ -174,9 +183,7 @@ const updateRole = async (req, res) => {
 
     if (permissions) {
       if (!Array.isArray(permissions)) {
-        return res
-          .status(400)
-          .json({ message: "Permissions must be an array" });
+        return res.status(400).json({ message: "Permissions must be an array" });
       }
 
       const permissionChecks = await Promise.all(
@@ -195,9 +202,7 @@ const updateRole = async (req, res) => {
       if (invalidPermissions.length > 0) {
         return res.status(400).json({
           message: "Some permissions do not exist",
-          invalidPermissions: permissions.filter(
-            (_, i) => !permissionChecks[i]
-          ),
+          invalidPermissions: permissions.filter((_, i) => !permissionChecks[i]),
         });
       }
 
@@ -205,23 +210,23 @@ const updateRole = async (req, res) => {
         deleteMany: {},
         create: permissionChecks.map((permission) => ({
           permission: {
-            connect: { id: permission.id },
+            connect: { id: parseInt(permission.id) },
           },
         })),
       };
     }
 
     const role = await prisma.role.update({
-        where: { id: id },
-        data,
-        include: {
-          permissionAssignments: {
-            include: {
-              permission: true,
-            },
+      where: { id: roleId },
+      data,
+      include: {
+        permissionAssignments: {
+          include: {
+            permission: true,
           },
         },
-      });
+      },
+    });
 
     res.json({
       id: role.id,
@@ -233,17 +238,21 @@ const updateRole = async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Error updating role" });
+    res.status(500).json({ message: "Error updating role", error: error.message });
   }
 };
 
 const deleteRole = async (req, res) => {
   try {
     const { id } = req.params;
+    const roleId = parseInt(id);
+    if (isNaN(roleId)) {
+      return res.status(400).json({ message: "Invalid role ID" });
+    }
 
     const roleExists = await prisma.role.findUnique({
       where: {
-        id: id,
+        id: roleId,
         deletedAt: null,
       },
     });
@@ -253,7 +262,7 @@ const deleteRole = async (req, res) => {
     }
 
     const role = await prisma.role.update({
-      where: { id },
+      where: { id: roleId },
       data: {
         deletedAt: new Date(),
       },
@@ -272,7 +281,7 @@ const deleteRole = async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Error deleting role" });
+    res.status(500).json({ message: "Error deleting role", error: error.message });
   }
 };
 

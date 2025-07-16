@@ -2,7 +2,6 @@ const jwt = require('jsonwebtoken');
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
-
 const authenticateUser = async (req, res, next) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
@@ -11,9 +10,14 @@ const authenticateUser = async (req, res, next) => {
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const userId = parseInt(decoded.userId);
+    if (isNaN(userId)) {
+      return res.status(401).json({ message: 'Invalid user ID in token' });
+    }
+
     const user = await prisma.user.findUnique({
       where: { 
-        id: decoded.userId,
+        id: userId,
         deletedAt: null
       },
       include: { 
@@ -45,7 +49,6 @@ const authenticateUser = async (req, res, next) => {
   }
 };
 
-
 const checkPermission = (permissions) => {
   return (req, res, next) => {
     if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
@@ -56,7 +59,6 @@ const checkPermission = (permissions) => {
       ra.role.permissionAssignments.map(pa => pa.permission.name)
     );
 
-    // Allow access if user has 'all_permissions'
     if (userPermissions.includes('all_permissions')) {
       return next();
     }
@@ -70,7 +72,6 @@ const checkPermission = (permissions) => {
     next();
   };
 };
-
 
 const checkRole = (role) => {
   return (req, res, next) => {

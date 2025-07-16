@@ -12,9 +12,7 @@ const createPermission = async (req, res) => {
       where: { name, deletedAt: null },
     });
     if (existingPermission) {
-      return res
-        .status(400)
-        .json({ message: "Permission name already exists" });
+      return res.status(400).json({ message: "Permission name already exists" });
     }
 
     const permission = await prisma.permission.create({
@@ -36,7 +34,7 @@ const createPermission = async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Error creating permission" });
+    res.status(500).json({ message: "Error creating permission", error: error.message });
   }
 };
 
@@ -62,17 +60,21 @@ const getAllPermissions = async (req, res) => {
     res.json(formattedPermissions);
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Error fetching permissions" });
+    res.status(500).json({ message: "Error fetching permissions", error: error.message });
   }
 };
 
 const getPermission = async (req, res) => {
   try {
     const { id } = req.params;
+    const permissionId = parseInt(id);
+    if (isNaN(permissionId)) {
+      return res.status(400).json({ message: "Invalid permission ID" });
+    }
 
     const permission = await prisma.permission.findUnique({
       where: {
-        id: id,
+        id: permissionId,
         deletedAt: null,
       },
       include: {
@@ -93,18 +95,23 @@ const getPermission = async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Error fetching permission" });
+    res.status(500).json({ message: "Error fetching permission", error: error.message });
   }
 };
 
 const updatePermission = async (req, res) => {
   try {
     const { id } = req.params;
+    const permissionId = parseInt(id);
+    if (isNaN(permissionId)) {
+      return res.status(400).json({ message: "Invalid permission ID" });
+    }
+
     const { name, description } = req.body;
 
     const permissionExists = await prisma.permission.findUnique({
       where: {
-        id: id,
+        id: permissionId,
         deletedAt: null,
       },
     });
@@ -117,15 +124,13 @@ const updatePermission = async (req, res) => {
       const nameExists = await prisma.permission.findUnique({
         where: { name, deletedAt: null },
       });
-      if (nameExists && nameExists.id !== id) {
-        return res
-          .status(400)
-          .json({ message: "Permission name already exists" });
+      if (nameExists && nameExists.id !== permissionId) {
+        return res.status(400).json({ message: "Permission name already exists" });
       }
     }
 
     const permission = await prisma.permission.update({
-      where: { id },
+      where: { id: permissionId },
       data: {
         name: name || permissionExists.name,
         description: description || permissionExists.description,
@@ -144,17 +149,21 @@ const updatePermission = async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Error updating permission" });
+    res.status(500).json({ message: "Error updating permission", error: error.message });
   }
 };
 
 const deletePermission = async (req, res) => {
   try {
     const { id } = req.params;
+    const permissionId = parseInt(id);
+    if (isNaN(permissionId)) {
+      return res.status(400).json({ message: "Invalid permission ID" });
+    }
 
     const permissionExists = await prisma.permission.findUnique({
       where: {
-        id: id,
+        id: permissionId,
         deletedAt: null,
       },
     });
@@ -164,7 +173,7 @@ const deletePermission = async (req, res) => {
     }
 
     const permission = await prisma.permission.update({
-      where: { id },
+      where: { id: permissionId },
       data: {
         deletedAt: new Date(),
       },
@@ -183,7 +192,7 @@ const deletePermission = async (req, res) => {
     });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Error deleting permission" });
+    res.status(500).json({ message: "Error deleting permission", error: error.message });
   }
 };
 

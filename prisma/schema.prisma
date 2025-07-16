@@ -7,32 +7,31 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// User model: Extended for RBAC with roleAssignments relation.
-// Note: For NextAuth, this integrates with PrismaAdapter; roles/permissions are added for RBAC.
 model User {
-  id            String    @id @default(uuid())
+  id            Int       @id @default(autoincrement())
   name          String?
   email         String?   @unique
   googleId      String?   @unique
   emailVerified DateTime?
-  image         String?   // Profile image URL
-  hashedPassword String?  // If using credentials provider
-  isActive      Boolean   @default(true) // From your previous code, for active status
+  image         String?
+  hashedPassword String?
+  isActive      Boolean   @default(true)
 
   accounts      Account[]
   sessions      Session[]
   donations     Donation[]
-  roleAssignments RoleAssignment[] // Link to roles via assignments (many-to-many with soft delete)
+  roleAssignments RoleAssignment[]
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
-  deletedAt     DateTime? // Soft delete as in your previous code
+  deletedAt     DateTime?
+
+  @@index([email])
 }
 
-// Account, Session, VerificationToken: Unchanged for NextAuth
 model Account {
-  id                String  @id @default(uuid())
-  userId            String
+  id                Int     @id @default(autoincrement())
+  userId            Int
   type              String
   provider          String
   providerAccountId String
@@ -47,15 +46,18 @@ model Account {
   user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
+  @@index([userId])
 }
 
 model Session {
-  id           String   @id @default(uuid())
+  id           Int      @id @default(autoincrement())
   sessionToken String   @unique
-  userId       String
+  userId       Int
   expires      DateTime
 
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model VerificationToken {
@@ -66,31 +68,27 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
-// Cause model: Updated with status fields (instead of separate open/closed booleans, use enum for status).
-// Added showOnWebsite flag.
 model Cause {
-  id                    String    @id @default(uuid())
-  name                  String    @unique
+  id                    Int         @id @default(autoincrement())
+  name                  String      @unique
   shortDescription      String?
   description           String?
   goal                  Float
-  raised                Float     @default(0)  // Can keep as is, but compute dynamically in API
+  raised                Float       @default(0)
   color                 String?
-  fundUsage             String?   // New: e.g., "Direct support: 60%, Supplies: 40%" or JSON
-
-  peopleHelped          Int       @default(0)
-  projectsCompleted     Int       @default(0)
-  communitiesImpacted   Int       @default(0)
-
+  fundUsage             String?
+  peopleHelped          Int         @default(0)
+  projectsCompleted     Int         @default(0)
+  communitiesImpacted   Int         @default(0)
   status                CauseStatus @default(OPEN)
-  showOnWebsite         Boolean   @default(true)
+  showOnWebsite         Boolean     @default(true)
 
   donations             Donation[]
   images                CauseImage[]
 
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
-  deletedAt             DateTime? 
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  deletedAt             DateTime?
 
   @@index([name])
 }
@@ -100,10 +98,9 @@ enum CauseStatus {
   CLOSED
 }
 
-// CauseImage: Unchanged
 model CauseImage {
-  id        String    @id @default(uuid())
-  causeId   String
+  id        Int       @id @default(autoincrement())
+  causeId   Int
   url       String
   altText   String?
   isPrimary Boolean   @default(false)
@@ -112,37 +109,34 @@ model CauseImage {
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
-  deletedAt DateTime? // Added for soft deletes
+  deletedAt DateTime?
 
   @@index([causeId])
 }
 
-// Donation model: Unchanged, but add soft delete if needed (deletedAt: DateTime?)
 model Donation {
-  id               String    @id @default(uuid())
-  userId           String?
-  user             User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  id               Int           @id @default(autoincrement())
+  userId           Int?
+  user             User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
   name             String?
   email            String
   amount           Float
   message          String?
   batch            String?
-  isAnonymous      Boolean   @default(false)
-  causeId          String?
-  cause            Cause?    @relation(fields: [causeId], references: [id], onDelete: SetNull)
-
-  orderId          String?   @unique
-  paymentId        String?   @unique
+  isAnonymous      Boolean       @default(false)
+  causeId          Int?
+  cause            Cause?        @relation(fields: [causeId], references: [id], onDelete: SetNull)
+  orderId          String?       @unique
+  paymentId        String?       @unique
   paymentStatus    PaymentStatus?
   paymentMethod    String?
   paymentCapturedAt DateTime?
-  receiptUrl    String?   
+  receiptUrl       String?
+  date             DateTime      @default(now())
 
-  date             DateTime  @default(now())
-
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
-  deletedAt        DateTime? // Optional soft delete
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  deletedAt        DateTime?
 
   @@index([userId])
   @@index([email])
@@ -157,10 +151,8 @@ enum PaymentStatus {
   REFUNDED
 }
 
-// New models for RBAC, adapted from your previous project code
-// Role: e.g., "ADMIN", "MODERATOR", "USER"
 model Role {
-  id                    String    @id @default(uuid())
+  id                    Int       @id @default(autoincrement())
   name                  String    @unique
   description           String?
 
@@ -169,12 +161,11 @@ model Role {
 
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
-  deletedAt             DateTime? // Soft delete
+  deletedAt             DateTime?
 }
 
-// Permission: e.g., "CREATE_CAUSE", "UPDATE_DONATION", "VIEW_REPORTS"
 model Permission {
-  id                    String    @id @default(uuid())
+  id                    Int       @id @default(autoincrement())
   name                  String    @unique
   description           String?
 
@@ -182,37 +173,39 @@ model Permission {
 
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
-  deletedAt             DateTime? // Soft delete
+  deletedAt             DateTime?
 }
 
-// RoleAssignment: Links users to roles (many-to-many)
 model RoleAssignment {
-  id        String    @id @default(uuid())
-  userId    String
-  roleId    String
+  id        Int       @id @default(autoincrement())
+  userId    Int
+  roleId    Int
 
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   role      Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
-  deletedAt DateTime? // Soft delete
+  deletedAt DateTime?
 
   @@unique([userId, roleId])
+  @@index([userId])
+  @@index([roleId])
 }
 
-// PermissionAssignment: Links roles to permissions (many-to-many)
 model PermissionAssignment {
-  id            String    @id @default(uuid())
-  roleId        String
-  permissionId  String
+  id            Int       @id @default(autoincrement())
+  roleId        Int
+  permissionId  Int
 
   role          Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
   permission    Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
 
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
-  deletedAt     DateTime? // Soft delete
+  deletedAt     DateTime?
 
   @@unique([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
 }

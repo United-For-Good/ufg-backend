@@ -39,7 +39,6 @@ const deleteMultipleFromBlob = async (urls) => {
 const createCause = async (req, res) => {
   try {
     let causesData = req.body.causes;
-    
     if (typeof causesData === 'string') {
       causesData = JSON.parse(causesData);
     }
@@ -49,6 +48,26 @@ const createCause = async (req, res) => {
 
     if (causesData.length === 0) {
       throw new Error('At least one cause is required');
+    }
+
+    
+    for (const data of causesData) {
+      if (!data.name || !data.goal) {
+        return res.status(400).json({ message: 'Name and goal are required for all causes' });
+      }
+      
+      const existingCause = await prisma.cause.findUnique({
+        where: { name: data.name },
+      });
+      if (existingCause && existingCause.deletedAt) {
+        
+        await prisma.cause.update({
+          where: { id: existingCause.id },
+          data: { name: `${existingCause.name}_deleted_${Date.now()}` },
+        });
+      } else if (existingCause) {
+        return res.status(400).json({ message: `Cause name '${data.name}' already exists` });
+      }
     }
 
     const createdCauses = await prisma.$transaction(async (tx) => {
@@ -69,7 +88,6 @@ const createCause = async (req, res) => {
         });
 
         const images = [];
-        
         const causeFiles = files.filter(f => f.fieldname === `images[${i}]` || (i === 0 && f.fieldname === 'images'));
         if (causeFiles.length > 0) {
           const uploadResults = await uploadMultipleToBlob(causeFiles, `causes/${cause.id}`);
@@ -94,7 +112,7 @@ const createCause = async (req, res) => {
 
     res.status(201).json(createdCauses);
   } catch (error) {
-    console.error(error);
+    console.error('Create cause error:', error);
     res.status(500).json({ message: 'Error creating causes', error: error.message });
   }
 };
@@ -102,26 +120,35 @@ const createCause = async (req, res) => {
 const addImagesToCause = async (req, res) => {
   try {
     const { id } = req.params;
+    const causeId = parseInt(id);
+    if (isNaN(causeId)) {
+      return res.status(400).json({ message: 'Invalid cause ID' });
+    }
+
     const files = req.files;
 
-    if (!files.length) return res.status(400).json({ message: 'No images provided' });
+    if (!files || files.length === 0) {
+      return res.status(400).json({ message: 'No images provided' });
+    }
 
     const cause = await prisma.cause.findUnique({
-      where: { id: parseInt(id), deletedAt: null },
+      where: { id: causeId, deletedAt: null },
       include: { images: { where: { deletedAt: null } } }
     });
 
-    if (!cause) return res.status(404).json({ message: 'Cause not found' });
+    if (!cause) {
+      return res.status(404).json({ message: 'Cause not found' });
+    }
 
     let hasPrimary = cause.images.some(img => img.isPrimary);
 
-    const uploadResults = await uploadMultipleToBlob(files, `causes/${id}`);
+    const uploadResults = await uploadMultipleToBlob(files, `causes/${causeId}`);
 
     const newImages = await prisma.$transaction(async (tx) => {
       const imgs = [];
       for (const result of uploadResults) {
         const isPrimary = !hasPrimary;
-        hasPrimary = true; 
+        hasPrimary = true;
         const causeImage = await tx.causeImage.create({
           data: {
             causeId: cause.id,
@@ -137,7 +164,7 @@ const addImagesToCause = async (req, res) => {
 
     res.status(201).json(newImages);
   } catch (error) {
-    console.error(error);
+    console.error('Add images error:', error);
     res.status(500).json({ message: 'Error adding images', error: error.message });
   }
 };
@@ -159,7 +186,7 @@ const getAllCauses = async (req, res) => {
 
     res.json(causes);
   } catch (error) {
-    console.error(error);
+    console.error('Get all causes error:', error);
     res.status(500).json({ message: 'Error fetching causes', error: error.message });
   }
 };
@@ -167,8 +194,13 @@ const getAllCauses = async (req, res) => {
 const getCause = async (req, res) => {
   try {
     const { id } = req.params;
+    const causeId = parseInt(id);
+    if (isNaN(causeId)) {
+      return res.status(400).json({ message: 'Invalid cause ID' });
+    }
+
     let cause = await prisma.cause.findUnique({
-      where: { id: parseInt(id), deletedAt: null },
+      where: { id: causeId, deletedAt: null },
       include: {
         images: { where: { deletedAt: null } },
         donations: {
@@ -179,46 +211,91 @@ const getCause = async (req, res) => {
         }
       }
     });
-    if (!cause) return res.status(404).json({ message: 'Cause not found' });
+
+    if (!cause) {
+      return res.status(404).json({ message: 'Cause not found' });
+    }
 
     const totalRaised = await prisma.donation.aggregate({
-      where: { causeId: cause.id, paymentStatus: 'CAPTURED' },
+      where: { causeId: causeId, paymentStatus: 'CAPTURED' },
       _sum: { amount: true }
     });
     cause.raised = totalRaised._sum.amount || 0;
 
     res.json(cause);
   } catch (error) {
-    console.error(error);
+    console.error('Get cause error:', error);
     res.status(500).json({ message: 'Error fetching cause', error: error.message });
   }
 };
 
 const updateCause = async (req, res) => {
   try {
-    const { id } = req.params;
-    const update = req.body;
+    let updates = req.body.updates;
+    if (!Array.isArray(updates)) updates = [{ id: req.params.id, ...req.body }];
 
-    const data = {};
-    if (update.name) data.name = update.name;
-    if (update.shortDescription) data.shortDescription = update.shortDescription;
-    if (update.description) data.description = update.description;
-    if (update.goal) data.goal = parseFloat(update.goal);
-    if (update.color) data.color = update.color;
-    if (update.fundUsage) data.fundUsage = update.fundUsage;
-    if (update.status) data.status = update.status;
-    if (update.showOnWebsite !== undefined) data.showOnWebsite = update.showOnWebsite === true || update.showOnWebsite === 'true';
+    
+    const parsedUpdates = updates.map(update => ({
+      ...update,
+      id: parseInt(update.id),
+    })).filter(update => !isNaN(update.id));
+    if (parsedUpdates.length === 0) {
+      return res.status(400).json({ message: 'No valid cause IDs provided' });
+    }
 
-    const cause = await prisma.cause.update({
-      where: { id: parseInt(id), deletedAt: null },
-      data,
-      include: { images: { where: { deletedAt: null } } }
+    const updatedCauses = await prisma.$transaction(async (tx) => {
+      const results = [];
+      for (const update of parsedUpdates) {
+        const causeId = update.id;
+
+        
+        const causeExists = await tx.cause.findUnique({
+          where: { id: causeId, deletedAt: null },
+        });
+        if (!causeExists) {
+          throw new Error(`Cause with ID ${causeId} not found`);
+        }
+
+        
+        if (update.name && update.name !== causeExists.name) {
+          const existingCause = await tx.cause.findUnique({
+            where: { name: update.name },
+          });
+          if (existingCause && existingCause.deletedAt) {
+            await tx.cause.update({
+              where: { id: existingCause.id },
+              data: { name: `${existingCause.name}_deleted_${Date.now()}` },
+            });
+          } else if (existingCause) {
+            throw new Error(`Cause name '${update.name}' already exists`);
+          }
+        }
+
+        const data = {};
+        if (update.name) data.name = update.name;
+        if (update.shortDescription) data.shortDescription = update.shortDescription;
+        if (update.description) data.description = update.description;
+        if (update.goal) data.goal = parseFloat(update.goal);
+        if (update.color) data.color = update.color;
+        if (update.fundUsage) data.fundUsage = update.fundUsage;
+        if (update.status) data.status = update.status;
+        if (update.showOnWebsite !== undefined) data.showOnWebsite = update.showOnWebsite === true || update.showOnWebsite === 'true';
+
+        const cause = await tx.cause.update({
+          where: { id: causeId, deletedAt: null },
+          data,
+          include: { images: { where: { deletedAt: null } } }
+        });
+
+        results.push(cause);
+      }
+      return results;
     });
 
-    res.json(cause);
+    res.json(updatedCauses);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Error updating cause', error: error.message });
+    console.error('Update cause error:', error);
+    res.status(500).json({ message: 'Error updating causes', error: error.message });
   }
 };
 
@@ -227,10 +304,16 @@ const deleteCause = async (req, res) => {
     let ids = req.body.ids;
     if (!Array.isArray(ids)) ids = [req.body.id];
 
+    
+    const parsedIds = ids.map(id => parseInt(id)).filter(id => !isNaN(id));
+    if (parsedIds.length === 0) {
+      return res.status(400).json({ message: 'No valid cause IDs provided' });
+    }
+
     await prisma.$transaction(async (tx) => {
-      for (const id of ids) {
+      for (const id of parsedIds) {
         const cause = await tx.cause.findUnique({
-          where: { id: parseInt(id), deletedAt: null },
+          where: { id, deletedAt: null },
           include: { images: true }
         });
         if (!cause) continue;
@@ -240,19 +323,19 @@ const deleteCause = async (req, res) => {
         }
 
         await tx.cause.update({
-          where: { id: parseInt(id) },
+          where: { id },
           data: { deletedAt: new Date() }
         });
         await tx.causeImage.updateMany({
-          where: { causeId: parseInt(id) },
+          where: { causeId: id },
           data: { deletedAt: new Date() }
         });
       }
     });
 
-    res.status(204).send();
+    res.status(204).json({message:"successfully deleted the causes"})
   } catch (error) {
-    console.error(error);
+    console.error('Delete cause error:', error);
     res.status(500).json({ message: 'Error deleting causes', error: error.message });
   }
 };

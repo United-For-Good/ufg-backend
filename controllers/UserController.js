@@ -16,7 +16,7 @@ const createUser = async (req, res) => {
     }
 
     const roleExists = await prisma.role.findUnique({ 
-        where: { name: role, deletedAt: null } 
+      where: { name: role, deletedAt: null } 
     });
 
     if (!roleExists) {
@@ -33,7 +33,7 @@ const createUser = async (req, res) => {
         roleAssignments: {
           create: {
             role: {
-              connect: { name: role },
+              connect: { id: parseInt(roleExists.id) },
             },
           },
         },
@@ -56,8 +56,8 @@ const createUser = async (req, res) => {
       role: assignedRole,
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Error creating user" });
+    console.error('Create user error:', error);
+    res.status(500).json({ message: "Error creating user", error: error.message });
   }
 };
 
@@ -93,10 +93,9 @@ const loginUser = async (req, res) => {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
-    const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET);
+    const token = jwt.sign({ userId: parseInt(user.id) }, process.env.JWT_SECRET);
 
     const roles = user.roleAssignments.map((ra) => ra.role.name);
-
     const permissions = user.roleAssignments
       .flatMap((ra) => ra.role.permissionAssignments)
       .map((pa) => pa.permission.name);
@@ -112,8 +111,8 @@ const loginUser = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Error logging in" });
+    console.error('Login error:', error);
+    res.status(500).json({ message: "Error logging in", error: error.message });
   }
 };
 
@@ -129,7 +128,7 @@ const googleLogin = async (req, res) => {
     const payload = ticket.getPayload();
     const email = payload.email;
     const googleId = payload.sub;
-    const name = payload.name; // Optional: use for new user
+    const name = payload.name;
 
     let user = await prisma.user.findUnique({
       where: { email, deletedAt: null },
@@ -151,16 +150,28 @@ const googleLogin = async (req, res) => {
     });
 
     if (!user) {
-      // Optional: Auto-create user if not exists (or return error to register)
-      // For now, assuming registration required; adjust as needed
       return res.status(401).json({ message: "Email is not registered, please sign up first" });
     }
 
     if (!user.googleId) {
       user = await prisma.user.update({
-        where: { id: user.id },
+        where: { id: parseInt(user.id) },
         data: { googleId },
-        include: { /* same include as above */ },
+        include: {
+          roleAssignments: {
+            include: {
+              role: {
+                include: {
+                  permissionAssignments: {
+                    include: {
+                      permission: true,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
       });
     } else if (user.googleId !== googleId) {
       return res.status(401).json({ message: "Google account mismatch" });
@@ -170,7 +181,7 @@ const googleLogin = async (req, res) => {
       return res.status(401).json({ message: "Account is inactive" });
     }
 
-    const token = jwt.sign({ userId: user.id }, process.env.JWT_SECRET);
+    const token = jwt.sign({ userId: parseInt(user.id) }, process.env.JWT_SECRET);
 
     const roles = user.roleAssignments.map((ra) => ra.role.name);
     const permissions = user.roleAssignments
@@ -188,8 +199,8 @@ const googleLogin = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Error logging in with Google" });
+    console.error('Google login error:', error);
+    res.status(500).json({ message: "Error logging in with Google", error: error.message });
   }
 };
 
@@ -226,16 +237,21 @@ const getAllUsers = async (req, res) => {
 
     res.json(formattedUsers);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Error fetching users" });
+    console.error('Get all users error:', error);
+    res.status(500).json({ message: "Error fetching users", error: error.message });
   }
 };
 
 const getUser = async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = parseInt(id);
+    if (isNaN(userId)) {
+      return res.status(400).json({ message: "Invalid user ID" });
+    }
+
     const user = await prisma.user.findUnique({
-      where: { id, deletedAt: null },
+      where: { id: userId, deletedAt: null },
       include: {
         roleAssignments: {
           include: {
@@ -256,14 +272,19 @@ const getUser = async (req, res) => {
       role: user.roleAssignments[0]?.role.name,
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Error fetching user" });
+    console.error('Get user error:', error);
+    res.status(500).json({ message: "Error fetching user", error: error.message });
   }
 };
 
 const updateUser = async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = parseInt(id);
+    if (isNaN(userId)) {
+      return res.status(400).json({ message: "Invalid user ID" });
+    }
+
     const { email, password, name, role } = req.body;
 
     const data = {};
@@ -275,14 +296,12 @@ const updateUser = async (req, res) => {
         where: { name: role, deletedAt: null },
       });
       if (!roleExists) {
-        return res
-          .status(400)
-          .json({ message: "Specified role does not exist" });
+        return res.status(400).json({ message: "Specified role does not exist" });
       }
     }
 
     const user = await prisma.user.update({
-      where: { id, deletedAt: null },
+      where: { id: userId, deletedAt: null },
       data: {
         ...data,
         ...(role && {
@@ -290,7 +309,7 @@ const updateUser = async (req, res) => {
             deleteMany: {},
             create: {
               role: {
-                connect: { name: role },
+                connect: { id: parseInt(roleExists.id) },
               },
             },
           },
@@ -312,23 +331,28 @@ const updateUser = async (req, res) => {
       role: user.roleAssignments[0]?.role.name,
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Error updating user" });
+    console.error('Update user error:', error);
+    res.status(500).json({ message: "Error updating user", error: error.message });
   }
 };
 
 const deleteUser = async (req, res) => {
   try {
     const { id } = req.params;
+    const userId = parseInt(id);
+    if (isNaN(userId)) {
+      return res.status(400).json({ message: "Invalid user ID" });
+    }
+
     const userExists = await prisma.user.findUnique({
-      where: { id, deletedAt: null },
+      where: { id: userId, deletedAt: null },
     });
     if (!userExists) {
       return res.status(404).json({ message: "User not found" });
     }
 
     await prisma.user.update({
-      where: { id },
+      where: { id: userId },
       data: {
         deletedAt: new Date(),
         isActive: false,
@@ -336,8 +360,8 @@ const deleteUser = async (req, res) => {
     });
     res.status(204).send();
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Error deleting user" });
+    console.error('Delete user error:', error);
+    res.status(500).json({ message: "Error deleting user", error: error.message });
   }
 };
 
